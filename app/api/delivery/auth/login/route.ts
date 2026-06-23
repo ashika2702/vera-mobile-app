@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-import bcrypt from "bcryptjs";
-import jwt from "jsonwebtoken";
+export const dynamic = "force-dynamic";
+import { query } from "@/lib/db";
+
 const JWT_SECRET = process.env.JWT_SECRET || "fallback_secret_for_development_only";
 
 export async function POST(req: Request) {
+  const bcrypt = require("bcryptjs");
+  const jwt = require("jsonwebtoken");
   try {
     const { identifier, password } = await req.json();
 
@@ -15,27 +17,24 @@ export async function POST(req: Request) {
       );
     }
 
-    // Find the Admin user by email or username
-    const admin = await prisma.admin.findFirst({
-      where: {
-        OR: [
-          { email: identifier },
-          { username: identifier }
-        ],
-        active: true
-      },
-      include: {
-        role: true,
-        deliveryBoyProfiles: true // Fetch linked profiles
-      }
-    });
+    // Find the Admin user by email or username using raw SQL
+    const adminRes = await query(
+      `SELECT a.*, ar."name" as "roleName"
+       FROM "Admin" a
+       LEFT JOIN "AdminRole" ar ON a."roleId" = ar."id"
+       WHERE (a."email" = $1 OR a."username" = $1) AND a."active" = true
+       LIMIT 1`,
+      [identifier]
+    );
 
-    if (!admin) {
+    if (adminRes.rows.length === 0) {
       return NextResponse.json(
         { success: false, message: "Invalid credentials" },
         { status: 401 }
       );
     }
+
+    const admin = adminRes.rows[0];
 
     // Verify password
     const isPasswordValid = await bcrypt.compare(password, admin.passwordHash);
@@ -47,15 +46,22 @@ export async function POST(req: Request) {
     }
 
     // Check role to ensure they are delivery staff
-    if (admin.role?.name !== "Delivery Staff") {
+    if (admin.roleName !== "Delivery Staff") {
       return NextResponse.json(
         { success: false, message: "Access denied. Only Delivery Staff can log in here." },
         { status: 403 }
       );
     }
 
+    // Fetch linked delivery boy profiles
+    const profilesRes = await query(
+      `SELECT * FROM "DeliveryBoy" WHERE "adminId" = $1`,
+      [admin.id]
+    );
+    const deliveryBoyProfiles = profilesRes.rows;
+
     // Ensure they have a linked DeliveryBoy profile
-    if (!admin.deliveryBoyProfiles || admin.deliveryBoyProfiles.length === 0) {
+    if (deliveryBoyProfiles.length === 0) {
       return NextResponse.json(
         { success: false, message: "No Delivery Boy profile linked to this account. Please contact the administrator." },
         { status: 403 }
@@ -63,7 +69,7 @@ export async function POST(req: Request) {
     }
 
     // Assume one-to-many relationship but we just grab the first active one
-    const activeProfile = admin.deliveryBoyProfiles.find(p => p.active);
+    const activeProfile = deliveryBoyProfiles.find(p => p.active);
     if (!activeProfile) {
       return NextResponse.json(
         { success: false, message: "Your delivery profile is currently inactive." },
