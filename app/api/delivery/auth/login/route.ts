@@ -36,8 +36,11 @@ export async function POST(req: Request) {
 
     const admin = adminRes.rows[0];
 
-    // Verify password
-    const isPasswordValid = await bcrypt.compare(password, admin.passwordHash);
+    // The database uses SHA-256 hashing for passwords, not bcrypt!
+    const crypto = require("crypto");
+    const hashedInputPassword = crypto.createHash("sha256").update(password).digest("hex");
+    const isPasswordValid = (hashedInputPassword === admin.passwordHash);
+
     if (!isPasswordValid) {
       return NextResponse.json(
         { success: false, message: "Invalid credentials" },
