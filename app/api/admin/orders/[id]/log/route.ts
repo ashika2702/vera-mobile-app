@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "../../../../../../lib/db";
-import { verifyAdminAuth, getAdminAuthErrorResponse } from "../../../../../../lib/admin-auth";
+import { verifyAdminAuthWithPermission, getAdminPermissionErrorResponse } from "../../../../../../lib/admin-auth";
 
 // GET /api/admin/orders/[id]/log — Full processing timeline for an order
 export async function GET(
@@ -8,8 +8,8 @@ export async function GET(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        if (!(await verifyAdminAuth(req))) {
-            return NextResponse.json(getAdminAuthErrorResponse(), { status: 401 });
+        if (!(await verifyAdminAuthWithPermission(req, "view_order_log"))) {
+            return NextResponse.json(getAdminPermissionErrorResponse(), { status: 403 });
         }
 
         const { id: orderId } = await params;
@@ -243,6 +243,38 @@ export async function GET(
             [orderId]
         );
 
+        // 8. Fetch global Audit Logs for this order
+        const auditLogsRes = await query<{
+            id: string;
+            action: string;
+            description: string | null;
+            oldData: any;
+            newData: any;
+            createdAt: Date;
+        }>(
+            `SELECT "id", "action", "description", "oldData", "newData", "createdAt"
+             FROM "AuditLog"
+             WHERE "entity" = 'ORDER' AND "entityId" = $1
+             ORDER BY "createdAt" ASC`,
+            [orderId]
+        );
+
+        // 9. Fetch customer's cans in hand and deposit history
+        const customerRes = await query<{ cansInHand: number }>(
+            `SELECT "cansInHand" FROM "Customer" WHERE "id" = $1`,
+            [order.customerId]
+        );
+        const customerCansInHand = customerRes.rows[0]?.cansInHand || 0;
+
+        const depositHistoryRes = await query<{ createdAt: Date; amount: number; description: string; type: string }>(
+            `SELECT ("createdAt" AT TIME ZONE 'Asia/Kolkata' AT TIME ZONE 'UTC') as "createdAt", "amount", "description", "type"
+             FROM "WalletTransaction"
+             WHERE "customerId" = $1
+               AND ("referenceType" ILIKE '%DEPOSIT%' OR "description" ILIKE '%deposit%')
+             ORDER BY "createdAt" ASC`,
+            [order.customerId]
+        );
+
         // ── Build unified timeline ──
         const events: Array<{
             id: string;
@@ -294,7 +326,7 @@ export async function GET(
             if (pay.status === "SUCCESS") {
                 const instrumentLabel = (order as any).paymentInstrument ? `${(order as any).paymentInstrument.toUpperCase()} - ` : "";
                 const qrSuffix = order.isQrPayment ? " (via QR)" : "";
-                
+
                 let bankRrn = null;
                 let upiId = null;
                 let payerContact = null;
@@ -471,6 +503,9 @@ export async function GET(
             });
         }
 
+        // 6. Global Audit logs for this order are intentionally omitted from this timeline 
+        // per the new requirement (they are only visible on the main Audit Logs page).
+
         // Sort all events by timestamp ascending
         events.sort(
             (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
@@ -478,6 +513,10 @@ export async function GET(
 
         const deliveredRO = routeOrdersRes.rows.find(ro => ro.deliveryStatus === 'DELIVERED');
         const deliveredAt = deliveredRO ? deliveredRO.routeOrderUpdatedAt : null;
+
+        const notDeliveredROs = routeOrdersRes.rows.filter(ro => ro.deliveryStatus === 'NOT_DELIVERED' && ro.notDeliveredReason);
+        const lastFailedRO = notDeliveredROs.length > 0 ? notDeliveredROs[notDeliveredROs.length - 1] : null;
+        const lastFailedReason = lastFailedRO ? lastFailedRO.notDeliveredReason : null;
 
         return NextResponse.json({
             success: true,
@@ -493,6 +532,7 @@ export async function GET(
                 initialDeliveryDate: initialDeliveryDateDisplay.toISOString(),
                 currentDeliveryDate: order.deliveryDate.toISOString(),
                 deliveredAt: deliveredAt ? deliveredAt.toISOString() : null,
+                lastFailedReason: lastFailedReason,
                 deliverySlot: order.deliverySlot,
                 status: order.status,
                 paymentStatus: order.paymentStatus,
@@ -505,6 +545,13 @@ export async function GET(
                     name: order.customerName || "Unknown",
                     phone: order.customerPhone,
                     internalId: (order as any).customerInternalId,
+                    cansInHand: customerCansInHand,
+                    depositHistory: depositHistoryRes.rows.map(tx => ({
+                        date: tx.createdAt.toISOString(),
+                        amount: tx.amount,
+                        description: tx.description,
+                        type: tx.type
+                    })),
                 },
                 address: {
                     line1: order.addressLine1,

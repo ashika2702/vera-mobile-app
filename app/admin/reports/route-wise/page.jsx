@@ -38,7 +38,8 @@ import {
   IndianRupee,
   AlertCircle,
   Clock,
-  Coins
+  Coins,
+  Printer
 } from 'lucide-react';
 import { cn } from '../../../../lib/utils';
 import toast from 'react-hot-toast';
@@ -60,6 +61,23 @@ export default function RouteWiseDeliveryReportPage() {
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(25);
+
+  const [adminPermissions, setAdminPermissions] = useState([]);
+
+  useEffect(() => {
+    try {
+      const perms = localStorage.getItem('adminPermissions');
+      if (perms) {
+        setAdminPermissions(JSON.parse(perms));
+      }
+    } catch (e) {
+      console.error('Failed to parse admin permissions', e);
+    }
+  }, []);
+
+  const hasPermission = (perm) => {
+    return adminPermissions.includes('SUPER_ADMIN') || adminPermissions.includes(perm);
+  };
 
   const [isStartDatePickerOpen, setIsStartDatePickerOpen] = useState(false);
   const [isEndDatePickerOpen, setIsEndDatePickerOpen] = useState(false);
@@ -166,206 +184,174 @@ export default function RouteWiseDeliveryReportPage() {
     };
   }, [filteredData]);
 
+  // Helper to generate the Excel worksheet
+  const getExcelSheet = () => {
+    const headers = [
+      'Order Number',
+      'Customer Name',
+      'No. of Items',
+      'Total Amt (₹)',
+      'COD (₹)',
+      'Online (₹)',
+      'QR Payment (₹)',
+      'Payment Type',
+      'Delivered / Not Delivered'
+    ];
+
+    const isSameDate = isSameDay(startDate, endDate);
+    const dateLabel = isSameDate
+      ? `Date: ${format(startDate, 'dd/MM/yyyy')}`
+      : `Date Range: ${format(startDate, 'dd/MM/yyyy')} to ${format(endDate, 'dd/MM/yyyy')}`;
+
+    const excelData = [
+      ['Route-wise Delivery & Payment Status Report'],
+      [
+        dateLabel,
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        ''
+      ],
+      [],
+      headers
+    ];
+
+    filteredData.forEach(item => {
+      const row = [
+        item.orderNumber || '',
+        item.customerName || '',
+        item.noOfItems || 0,
+        Math.round(item.amount || 0),
+        Math.round(item.cod || 0),
+        Math.round(item.online || 0),
+        Math.round(item.isQrPayment ? (item.amount || 0) : 0),
+        item.isQrPayment ? 'UPI (QR PAID)' : (item.paymentType || ''),
+        item.deliveryClassification || 'Not Delivered'
+      ];
+      excelData.push(row);
+    });
+
+    // Add Grand Total Row
+    const totalRow = [
+      'Grand Total',
+      '',
+      metrics.totalItems,
+      Math.round(metrics.totalAmount),
+      Math.round(metrics.totalCod),
+      Math.round(metrics.totalOnline),
+      Math.round(metrics.totalQr),
+      '',
+      ''
+    ];
+    excelData.push(totalRow);
+
+    const ws = XLSX.utils.aoa_to_sheet(excelData);
+
+    // Styling parameters
+    const range = XLSX.utils.decode_range(ws['!ref']);
+    const headerRowIndex = 3;
+    const totalRowIndex = excelData.length - 1;
+
+    for (let R = range.s.r; R <= range.e.r; ++R) {
+      for (let C = range.s.c; C <= range.e.c; ++C) {
+        const cell_address = { c: C, r: R };
+        const cell_ref = XLSX.utils.encode_cell(cell_address);
+        if (!ws[cell_ref]) continue;
+
+        // Base Styles (thin borders and default alignments)
+        ws[cell_ref].s = {
+          border: {
+            top: { style: "thin", color: { rgb: "E5E7EB" } },
+            bottom: { style: "thin", color: { rgb: "E5E7EB" } },
+            left: { style: "thin", color: { rgb: "E5E7EB" } },
+            right: { style: "thin", color: { rgb: "E5E7EB" } }
+          },
+          font: { sz: 10, name: "Segoe UI", color: { rgb: "374151" } },
+          alignment: { vertical: "center", horizontal: "left" }
+        };
+
+        // Numbers align right
+        if ([2, 3, 4, 5, 6].includes(C) && R >= headerRowIndex) {
+          ws[cell_ref].s.alignment.horizontal = "right";
+        }
+
+        // Center statuses & IDs
+        if ([0, 7, 8].includes(C) && R >= headerRowIndex) {
+          ws[cell_ref].s.alignment.horizontal = "center";
+        }
+
+        // 1. Report Main Title
+        if (R === 0) {
+          ws[cell_ref].s.font = { bold: true, sz: 14, color: { rgb: "111827" } };
+          ws[cell_ref].s.alignment = { horizontal: "center", vertical: "center" };
+          ws[cell_ref].s.border = {};
+        }
+
+        // 2. Date info & Meta descriptions
+        if (R === 1) {
+          ws[cell_ref].s.font = { italic: true, sz: 9, color: { rgb: "4B5563" } };
+          ws[cell_ref].s.border = {};
+          ws[cell_ref].s.alignment = { horizontal: "left", vertical: "center" };
+        }
+
+        // 3. Table Header
+        if (R === headerRowIndex) {
+          ws[cell_ref].s.font = { bold: true, sz: 10, color: { rgb: "111827" } };
+          ws[cell_ref].s.alignment.horizontal = [2, 3, 4, 5, 6].includes(C) ? "right" : ([0, 7, 8].includes(C) ? "center" : "left");
+          ws[cell_ref].s.border = {
+            bottom: { style: "thin", color: { rgb: "9CA3AF" } },
+            top: { style: "thin", color: { rgb: "E5E7EB" } },
+            left: { style: "thin", color: { rgb: "E5E7EB" } },
+            right: { style: "thin", color: { rgb: "E5E7EB" } }
+          };
+        }
+
+        // 4. Color Code Delivery Status Classifications
+        if (C === 8 && R > headerRowIndex && R < totalRowIndex) {
+          ws[cell_ref].s.font = { sz: 10, color: { rgb: "374151" } };
+        }
+
+        // 5. Grand Total Row
+        if (R === totalRowIndex) {
+          ws[cell_ref].s.font = { bold: true, sz: 10, color: { rgb: "111827" } };
+          ws[cell_ref].s.border = {
+            top: { style: "thin", color: { rgb: "9CA3AF" } },
+            bottom: { style: "thin", color: { rgb: "9CA3AF" } }
+          };
+        }
+      }
+    }
+
+    // Merges for titles
+    ws['!merges'] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: headers.length - 1 } }
+    ];
+
+    // Auto-fit columns
+    const colWidths = headers.map((h, colIdx) => {
+      let maxLen = h.length;
+      excelData.forEach((row, rowIdx) => {
+        if (rowIdx > 2 && row[colIdx] !== undefined && row[colIdx] !== null) {
+          const len = String(row[colIdx]).length;
+          if (len > maxLen) maxLen = len;
+        }
+      });
+      return { wch: Math.min(maxLen + 3, 50) };
+    });
+    ws['!cols'] = colWidths;
+
+    return ws;
+  };
+
   // Download styled Excel report
   const downloadExcel = () => {
     try {
-      const headers = [
-        'Order Number', 
-        'Customer Name', 
-        'No. of Items', 
-        'Total Amt (₹)', 
-        'COD (₹)', 
-        'Online (₹)', 
-        'QR Payment (₹)',
-        'Payment Type', 
-        'Delivered / Not Delivered'
-      ];
-
-      const isSameDate = isSameDay(startDate, endDate);
-      const dateLabel = isSameDate
-        ? `Date: ${format(startDate, 'dd/MM/yyyy')}`
-        : `Date Range: ${format(startDate, 'dd/MM/yyyy')} to ${format(endDate, 'dd/MM/yyyy')}`;
-
-      const firstItem = filteredData[0];
-      const routeText = selectedRouteId === 'all' 
-        ? 'All Routes' 
-        : (firstItem?.routeName || 'Unassigned');
-      
-      const staffText = selectedRouteId === 'all'
-        ? 'All Staff'
-        : (firstItem?.deliveryBoyName || 'Unassigned');
-
-      const excelData = [
-        ['Route-wise Delivery & Payment Status Report'],
-        [
-          dateLabel,
-          '',
-          '',
-          '',
-          `Generated: ${format(new Date(), 'dd/MM/yyyy hh:mm a')}`,
-          '',
-          '',
-          '',
-          ''
-        ],
-        [
-          `Route Name: ${routeText}`,
-          '',
-          '',
-          '',
-          `Delivery Staff: ${staffText}`,
-          '',
-          '',
-          '',
-          ''
-        ],
-        [],
-        headers
-      ];
-
-      filteredData.forEach(item => {
-        const row = [
-          item.orderNumber || '',
-          item.customerName || '',
-          item.noOfItems || 0,
-          Math.round(item.amount || 0),
-          Math.round(item.cod || 0),
-          Math.round(item.online || 0),
-          Math.round(item.isQrPayment ? (item.amount || 0) : 0),
-          item.isQrPayment ? 'UPI (QR PAID)' : (item.paymentType || ''),
-          item.deliveryClassification || 'Not Delivered'
-        ];
-        excelData.push(row);
-      });
-
-      // Add Grand Total Row
-      const totalRow = [
-        'Grand Total',
-        '',
-        metrics.totalItems,
-        Math.round(metrics.totalAmount),
-        Math.round(metrics.totalCod),
-        Math.round(metrics.totalOnline),
-        Math.round(metrics.totalQr),
-        '',
-        ''
-      ];
-      excelData.push(totalRow);
-
-      const ws = XLSX.utils.aoa_to_sheet(excelData);
-
-      // Styling parameters
-      const range = XLSX.utils.decode_range(ws['!ref']);
-      const headerRowIndex = 4;
-      const totalRowIndex = excelData.length - 1;
-
-      for (let R = range.s.r; R <= range.e.r; ++R) {
-        for (let C = range.s.c; C <= range.e.c; ++C) {
-          const cell_address = { c: C, r: R };
-          const cell_ref = XLSX.utils.encode_cell(cell_address);
-          if (!ws[cell_ref]) continue;
-
-          // Base Styles (thin borders and default alignments)
-          ws[cell_ref].s = {
-            border: {
-              top: { style: "thin", color: { rgb: "E5E7EB" } },
-              bottom: { style: "thin", color: { rgb: "E5E7EB" } },
-              left: { style: "thin", color: { rgb: "E5E7EB" } },
-              right: { style: "thin", color: { rgb: "E5E7EB" } }
-            },
-            font: { sz: 10, name: "Segoe UI", color: { rgb: "374151" } },
-            alignment: { vertical: "center", horizontal: "left" }
-          };
-
-          // Numbers align right
-          if ([2, 3, 4, 5, 6].includes(C) && R >= headerRowIndex) {
-            ws[cell_ref].s.alignment.horizontal = "right";
-          }
-
-          // Center statuses & IDs
-          if ([0, 7, 8].includes(C) && R >= headerRowIndex) {
-            ws[cell_ref].s.alignment.horizontal = "center";
-          }
-
-          // 1. Report Main Title
-          if (R === 0) {
-            ws[cell_ref].s.font = { bold: true, sz: 14, color: { rgb: "111827" } };
-            ws[cell_ref].s.alignment = { horizontal: "center", vertical: "center" };
-            ws[cell_ref].s.border = {};
-          }
-
-          // 2. Date info & Meta descriptions
-          if (R === 1) {
-            ws[cell_ref].s.font = { italic: true, sz: 9, color: { rgb: "4B5563" } };
-            ws[cell_ref].s.border = {};
-            if (C <= 3) {
-              ws[cell_ref].s.alignment = { horizontal: "left", vertical: "center" };
-            } else {
-              ws[cell_ref].s.alignment = { horizontal: "right", vertical: "center" };
-            }
-          }
-
-          // Route & Delivery Staff Common Row
-          if (R === 2) {
-            ws[cell_ref].s.font = { bold: true, sz: 9, color: { rgb: "374151" } };
-            ws[cell_ref].s.border = {};
-            if (C <= 3) {
-              ws[cell_ref].s.alignment = { horizontal: "left", vertical: "center" };
-            } else {
-              ws[cell_ref].s.alignment = { horizontal: "right", vertical: "center" };
-            }
-          }
-
-          // 3. Table Header
-          if (R === headerRowIndex) {
-            ws[cell_ref].s.font = { bold: true, sz: 10, color: { rgb: "111827" } };
-            ws[cell_ref].s.alignment.horizontal = [2, 3, 4, 5, 6].includes(C) ? "right" : ([0, 7, 8].includes(C) ? "center" : "left");
-            ws[cell_ref].s.border = {
-              bottom: { style: "thin", color: { rgb: "9CA3AF" } },
-              top: { style: "thin", color: { rgb: "E5E7EB" } },
-              left: { style: "thin", color: { rgb: "E5E7EB" } },
-              right: { style: "thin", color: { rgb: "E5E7EB" } }
-            };
-          }
-
-          // 4. Color Code Delivery Status Classifications
-          if (C === 8 && R > headerRowIndex && R < totalRowIndex) {
-            ws[cell_ref].s.font = { sz: 10, color: { rgb: "374151" } };
-          }
-
-          // 5. Grand Total Row
-          if (R === totalRowIndex) {
-            ws[cell_ref].s.font = { bold: true, sz: 10, color: { rgb: "111827" } };
-            ws[cell_ref].s.border = {
-              top: { style: "thin", color: { rgb: "9CA3AF" } },
-              bottom: { style: "thin", color: { rgb: "9CA3AF" } }
-            };
-          }
-        }
-      }
-
-      // Merges for titles
-      ws['!merges'] = [
-        { s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } },
-        { s: { r: 1, c: 0 }, e: { r: 1, c: 3 } },
-        { s: { r: 1, c: 4 }, e: { r: 1, c: headers.length - 1 } },
-        { s: { r: 2, c: 0 }, e: { r: 2, c: 3 } },
-        { s: { r: 2, c: 4 }, e: { r: 2, c: headers.length - 1 } }
-      ];
-
-      // Auto-fit columns
-      const colWidths = headers.map((h, colIdx) => {
-        let maxLen = h.length;
-        excelData.forEach((row, rowIdx) => {
-          if (rowIdx > 3 && row[colIdx] !== undefined && row[colIdx] !== null) {
-            const len = String(row[colIdx]).length;
-            if (len > maxLen) maxLen = len;
-          }
-        });
-        return { wch: Math.min(maxLen + 3, 50) };
-      });
-      ws['!cols'] = colWidths;
-
+      const ws = getExcelSheet();
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Delivery Status');
 
@@ -375,6 +361,66 @@ export default function RouteWiseDeliveryReportPage() {
     } catch (err) {
       console.error('Download error:', err);
       toast.error('Failed to download Excel');
+    }
+  };
+
+  const handlePrint = () => {
+    try {
+      const ws = getExcelSheet();
+      const htmlString = XLSX.utils.sheet_to_html(ws, { id: "report-table", editable: false });
+
+      const iframe = document.createElement('iframe');
+      iframe.style.display = 'none';
+      document.body.appendChild(iframe);
+
+      const iframeDoc = iframe.contentWindow.document;
+      iframeDoc.open();
+      iframeDoc.write(`
+        <html>
+          <head>
+            <title>SABOLS - Watercan Ordering System</title>
+            <style>
+              body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; color: #333; }
+              table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 12px; }
+              th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+              
+              /* Layout Adjustments */
+              tr:nth-child(1) td { border: none; font-size: 16px; font-weight: bold; text-align: center; }
+              tr:nth-child(2) td { border: none; font-size: 12px; color: #555; }
+              tr:nth-child(3) td { border: none; height: 10px; }
+              tr:nth-child(4) td { font-weight: bold; background-color: #f3f4f6; text-align: center; border: 2px solid #ccc; }
+              tr:last-child td { font-weight: bold; border-top: 2px solid #ccc; border-bottom: 2px double #ccc; }
+              
+              /* Value Alignment */
+              td:nth-child(3), td:nth-child(4), td:nth-child(5), td:nth-child(6), td:nth-child(7) {
+                text-align: right;
+              }
+              td:nth-child(1), td:nth-child(8), td:nth-child(9) {
+                text-align: center;
+              }
+              
+              @media print {
+                @page { size: portrait; margin: 10mm; }
+              }
+            </style>
+          </head>
+          <body>
+            ${htmlString}
+          </body>
+        </html>
+      `);
+      iframeDoc.close();
+
+      setTimeout(() => {
+        iframe.contentWindow.focus();
+        iframe.contentWindow.print();
+        setTimeout(() => {
+          document.body.removeChild(iframe);
+        }, 1000);
+      }, 500);
+    } catch (err) {
+      console.error('Print error:', err);
+      toast.error('Failed to generate print document');
     }
   };
 
@@ -388,19 +434,28 @@ export default function RouteWiseDeliveryReportPage() {
           </h1>
           <p className="text-gray-500 mt-1">Detailed delivery outcomes, items count, and cash vs online splits aggregated by route.</p>
         </div>
-        {!isLoading && filteredData.length > 0 && (
-          <Button
-            onClick={downloadExcel}
-            className="bg-green-600 hover:bg-green-700 shadow-md transition-all hover:scale-[1.02] text-white gap-2 h-11"
-          >
-            <FileDown className="h-5 w-5" /> Download Excel
-          </Button>
+        {!isLoading && filteredData.length > 0 && hasPermission('export_route_wise_reports') && (
+          <div className="flex gap-3 print:hidden">
+            <Button
+              onClick={handlePrint}
+              variant="outline"
+              className="border-blue-600 text-blue-600 hover:bg-blue-50 shadow-md transition-all hover:scale-[1.02] gap-2 h-11 px-5"
+            >
+              <Printer className="h-5 w-5" /> Print
+            </Button>
+            <Button
+              onClick={downloadExcel}
+              className="bg-green-600 hover:bg-green-700 shadow-md transition-all hover:scale-[1.02] text-white gap-2 h-11 px-5"
+            >
+              <FileDown className="h-5 w-5" /> Download Excel
+            </Button>
+          </div>
         )}
       </div>
-     
+
 
       {/* Interactive Filters Panel */}
-      <Card className="border-none shadow-md bg-white/70 backdrop-blur-sm">
+      <Card className="border-none shadow-md bg-white/70 backdrop-blur-sm print:hidden">
         <CardContent className="pt-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 items-end">
 
@@ -593,28 +648,30 @@ export default function RouteWiseDeliveryReportPage() {
             {/* Pagination Segment */}
             {!isLoading && filteredData.length > 0 && (
               <div className="flex flex-col sm:flex-row items-center justify-end gap-x-1 gap-y-4 py-5 border-t border-gray-100 px-6">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-600 whitespace-nowrap">
-                    Showing <b>{Math.min(filteredData.length, (currentPage - 1) * itemsPerPage + 1)} - {Math.min(filteredData.length, currentPage * itemsPerPage)}</b> of <b>{filteredData.length}</b> orders
-                  </span>
-                  <Select
-                    value={itemsPerPage.toString()}
-                    onValueChange={(value) => {
-                      setItemsPerPage(parseInt(value));
-                      setCurrentPage(1);
-                    }}
-                  >
-                    <SelectTrigger className="h-9 w-auto border-none shadow-none bg-transparent hover:bg-gray-100 focus:ring-0 gap-1 px-2">
-                      <SelectValue placeholder={`${itemsPerPage} per page`} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="10">10 per page</SelectItem>
-                      <SelectItem value="25">25 per page</SelectItem>
-                      <SelectItem value="50">50 per page</SelectItem>
-                      <SelectItem value="100">100 per page</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                {hasPermission('view_route_wise_reports_count') && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray-600 whitespace-nowrap">
+                      Showing <b>{Math.min(filteredData.length, (currentPage - 1) * itemsPerPage + 1)} - {Math.min(filteredData.length, currentPage * itemsPerPage)}</b> of <b>{filteredData.length}</b> orders
+                    </span>
+                    <Select
+                      value={itemsPerPage.toString()}
+                      onValueChange={(value) => {
+                        setItemsPerPage(parseInt(value));
+                        setCurrentPage(1);
+                      }}
+                    >
+                      <SelectTrigger className="h-9 w-auto border-none shadow-none bg-transparent hover:bg-gray-100 focus:ring-0 gap-1 px-2">
+                        <SelectValue placeholder={`${itemsPerPage} per page`} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="10">10 per page</SelectItem>
+                        <SelectItem value="25">25 per page</SelectItem>
+                        <SelectItem value="50">50 per page</SelectItem>
+                        <SelectItem value="100">100 per page</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
 
                 <div className="flex items-center gap-4">
                   <Button
@@ -627,9 +684,11 @@ export default function RouteWiseDeliveryReportPage() {
                     <ChevronLeft className="h-5 w-5" />
                   </Button>
 
-                  <div className="text-sm text-gray-700">
-                    Page <b>{currentPage}</b> of <b>{totalPages || 1}</b>
-                  </div>
+                  {hasPermission('view_route_wise_reports_count') && (
+                    <div className="text-sm text-gray-700">
+                      Page <b>{currentPage}</b> of <b>{totalPages || 1}</b>
+                    </div>
+                  )}
 
                   <Button
                     variant="outline"
@@ -646,6 +705,39 @@ export default function RouteWiseDeliveryReportPage() {
           </div>
         </section>
       )}
+
+      {/* Print Styles */}
+      <style jsx global>{`
+        @media print {
+          aside, [data-sidebar="sidebar"], header, footer {
+            display: none !important;
+          }
+          main {
+            padding: 0 !important;
+            margin: 0 !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            background: white !important;
+          }
+          body {
+            background: white !important;
+          }
+          table {
+            width: 100% !important;
+            break-inside: auto;
+          }
+          tr {
+            break-inside: avoid;
+            page-break-inside: avoid;
+          }
+          thead {
+            display: table-header-group;
+          }
+          .overflow-hidden, .overflow-x-auto {
+            overflow: visible !important;
+          }
+        }
+      `}</style>
     </div>
   );
 }

@@ -60,6 +60,23 @@ export default function ReassignedReportsPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isStartDatePickerOpen, setIsStartDatePickerOpen] = useState(false);
   const [isEndDatePickerOpen, setIsEndDatePickerOpen] = useState(false);
+
+  const [adminPermissions, setAdminPermissions] = useState([]);
+
+  useEffect(() => {
+    try {
+      const perms = localStorage.getItem('adminPermissions');
+      if (perms) {
+        setAdminPermissions(JSON.parse(perms));
+      }
+    } catch (e) {
+      console.error('Failed to parse admin permissions', e);
+    }
+  }, []);
+
+  const hasPermission = (perm) => {
+    return adminPermissions.includes('SUPER_ADMIN') || adminPermissions.includes(perm);
+  };
   const [isDownloadDialogOpen, setIsDownloadDialogOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -157,7 +174,11 @@ export default function ReassignedReportsPage() {
         order.orderNumber || order.id.slice(-8).toUpperCase(),
         format(new Date(order.orderCreatedAt), 'dd/MM/yyyy'),
         order.customerName,
-        `${getDisplayStatus(order)}${order.deliveredDate ? ` (${format(new Date(order.deliveredDate), 'dd/MM/yyyy hh:mm a')})` : ''}`,
+        order.lastFailedReason || 'N/A',
+        order.lastFailedBy || 'N/A',
+        getDisplayStatus(order),
+        order.currentDeliveryBoyName || 'N/A',
+        order.deliveredDate ? format(new Date(order.deliveredDate), 'dd/MM/yyyy hh:mm a') : 'N/A',
         order.reassignmentCount,
         order.agingDays,
         // format(new Date(order.lastReassignedAt), 'dd/MM/yyyy hh:mm a')
@@ -165,7 +186,7 @@ export default function ReassignedReportsPage() {
 
       autoTable(doc, {
         startY: 40,
-        head: [['Order #', 'Created At', 'Customer', 'Status', 'Reassigned Count', 'Aging' /*, 'Last Reassigned' */]],
+        head: [['Order ', 'Created At', 'Customer', 'Failed Reason', 'Failed By', 'Current Status', 'Current Delivery Staff', 'Delivered Date', 'Reassigned Count', 'Aging' /*, 'Last Reassigned' */]],
         body: tableRows,
         theme: 'grid',
         headStyles: { fillColor: [59, 130, 246] },
@@ -192,7 +213,7 @@ export default function ReassignedReportsPage() {
       excelData.push([]); // Spacer
 
       // Table Headers
-      const headers = ["Order #", "Created At", "Customer Name", "Phone", "Status", "Reassigned Count", "Aging (Days)" /*, "Last Reassigned" */];
+      const headers = ["Order ", "Created At", "Customer Name", "Phone", "Failed Reason", "Failed By", "Current Status", "Current Delivery Staff", "Delivered Date & Time", "Reassigned Count", "Aging (Days)" /*, "Last Reassigned" */];
       excelData.push(headers);
 
       // Data Rows
@@ -202,7 +223,11 @@ export default function ReassignedReportsPage() {
           format(new Date(order.orderCreatedAt), 'dd/MM/yyyy hh:mm a'),
           order.customerName,
           order.customerPhone,
-          `${getDisplayStatus(order)}${order.deliveredDate ? ` at ${format(new Date(order.deliveredDate), 'dd/MM/yyyy hh:mm a')}` : ''}`,
+          order.lastFailedReason || 'N/A',
+          order.lastFailedBy || 'N/A',
+          getDisplayStatus(order),
+          order.currentDeliveryBoyName || 'N/A',
+          order.deliveredDate ? format(new Date(order.deliveredDate), 'dd/MM/yyyy hh:mm a') : 'N/A',
           order.reassignmentCount,
           order.agingDays,
           // format(new Date(order.lastReassignedAt), 'dd/MM/yyyy hh:mm a')
@@ -211,14 +236,38 @@ export default function ReassignedReportsPage() {
 
       const ws = XLSX.utils.aoa_to_sheet(excelData);
       
+      // Set column widths
+      ws['!cols'] = [
+        { wch: 15 }, // Order
+        { wch: 22 }, // Created At
+        { wch: 25 }, // Customer Name
+        { wch: 15 }, // Phone
+        { wch: 35 }, // Failed Reason
+        { wch: 20 }, // Failed By
+        { wch: 20 }, // Current Status
+        { wch: 25 }, // Current Delivery Staff
+        { wch: 25 }, // Delivered Date & Time
+        { wch: 18 }, // Reassigned Count
+        { wch: 15 }, // Aging (Days)
+      ];
+      
       // Basic styling
       const range = XLSX.utils.decode_range(ws['!ref']);
       for (let R = range.s.r; R <= range.e.r; ++R) {
         for (let C = range.s.c; C <= range.e.c; ++C) {
           const cell_ref = XLSX.utils.encode_cell({ c: C, r: R });
           if (!ws[cell_ref]) continue;
+          
+          ws[cell_ref].s = ws[cell_ref].s || {};
+          
           if (R === 4) { // Header row (index 4 because of spacers)
-             ws[cell_ref].s = { font: { bold: true }, fill: { fgColor: { rgb: "E5E7EB" } } };
+             ws[cell_ref].s.font = { bold: true };
+             ws[cell_ref].s.fill = { fgColor: { rgb: "E5E7EB" } };
+          }
+          
+          // Reassigned Count is column index 9
+          if (C === 9) {
+             ws[cell_ref].s.alignment = { horizontal: "right" };
           }
         }
       }
@@ -241,13 +290,15 @@ export default function ReassignedReportsPage() {
           <h1 className="text-3xl font-bold tracking-tight text-gray-900">Reassigned Orders Report</h1>
           <p className="text-gray-500 mt-1">Monitor orders that have been reassigned across routes and staff.</p>
         </div>
-        <Button 
-          onClick={() => setIsDownloadDialogOpen(true)} 
-          disabled={filteredOrders.length === 0 || isLoading}
-          className="bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
-        >
-          <Download className="mr-2 h-4 w-4" /> Download Report
-        </Button>
+        {hasPermission('export_reassigned_orders_reports') && (
+          <Button 
+            onClick={() => setIsDownloadDialogOpen(true)} 
+            disabled={filteredOrders.length === 0 || isLoading}
+            className="bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
+          >
+            <Download className="mr-2 h-4 w-4" /> Download Report
+          </Button>
+        )}
       </div>
 
       <Card className="border-none shadow-sm bg-white">
@@ -352,18 +403,18 @@ export default function ReassignedReportsPage() {
               <Table>
                 <TableHeader className="bg-gray-50">
                   <TableRow>
-                    <TableHead className="font-bold py-4">Order #</TableHead>
-                    <TableHead className="font-bold py-4">Customer</TableHead>
-                    <TableHead className="font-bold py-4">Current Status</TableHead>
-                    <TableHead className="font-bold py-4 text-center">Count</TableHead>
-                    <TableHead className="font-bold py-4 text-center">Aging</TableHead>
-                    {/* <TableHead className="font-bold py-4">Date & Time</TableHead> */}
+                    <TableHead className="font-bold py-4 w-[150px] pl-6">Order Details</TableHead>
+                    <TableHead className="font-bold py-4 w-[250px]">Customer</TableHead>
+                    <TableHead className="font-bold py-4 w-[250px]">Failed Reason</TableHead>
+                    <TableHead className="font-bold py-4 w-[250px]">Current Status</TableHead>
+                    <TableHead className="font-bold py-4 text-center w-[100px]">Count</TableHead>
+                    <TableHead className="font-bold py-4 text-center w-[100px]">Aging</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {paginatedOrders.map((order) => (
                     <TableRow key={order.id} className="hover:bg-blue-50/30 transition-colors">
-                      <TableCell className="font-medium">
+                      <TableCell className="font-medium w-[150px] pl-6 align-middle">
                         <div className="flex flex-col">
                           <div className="flex items-center gap-2">
                             <span className="text-blue-600 font-bold">#{order.orderNumber || order.id.slice(-8).toUpperCase()}</span>
@@ -379,7 +430,7 @@ export default function ReassignedReportsPage() {
                           </span>
                         </div>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="w-[250px] align-middle">
                         <div className="flex flex-col">
                           <span className="font-medium text-gray-900">{order.customerName}</span>
                           <span className="text-xs text-gray-500">{order.customerPhone}</span>
@@ -389,32 +440,51 @@ export default function ReassignedReportsPage() {
                           </span>
                         </div>
                       </TableCell>
-                      <TableCell>
-                        <Badge 
-                          className={cn(
-                            "px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider",
-                            order.deliveryStatus === 'DELIVERED' ? "bg-green-100 text-green-700 border-green-200" :
-                            order.status === 'CANCELLED' ? "bg-red-100 text-red-700 border-red-200" :
-                            getDisplayStatus(order) === 'Delivery in Progress' ? "bg-blue-100 text-blue-700 border-blue-200" :
-                            "bg-amber-100 text-amber-700 border-amber-200"
+                      <TableCell className="w-[250px] whitespace-normal break-words align-middle">
+                        <div className="flex flex-col">
+                          <span className="font-medium text-sm text-gray-900">{order.lastFailedReason || '-'}</span>
+                          {order.lastFailedBy && (
+                            <span className="text-xs text-gray-500 flex items-center mt-1">
+                              <User className="h-3 w-3 mr-1 text-blue-600" />
+                              {order.lastFailedBy}
+                            </span>
                           )}
-                        >
-                          {getDisplayStatus(order)}
-                        </Badge>
-                        {order.deliveredDate && (
-                          <div className="text-[10px] text-green-600 font-medium mt-1 leading-tight">
-                            Delivered at:
-                            <div className="font-bold">{format(new Date(order.deliveredDate), 'dd MMM yyyy')}</div>
-                            <div className="uppercase">{format(new Date(order.deliveredDate), 'hh:mm a')}</div>
-                          </div>
-                        )}
+                        </div>
                       </TableCell>
-                      <TableCell className="text-center">
+                      <TableCell className="w-[250px] align-middle">
+                        <div className="flex flex-col items-start gap-1">
+                          <Badge 
+                            className={cn(
+                              "px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider shrink-0",
+                              order.deliveryStatus === 'DELIVERED' ? "bg-green-100 text-green-700 border-green-200" :
+                              order.status === 'CANCELLED' ? "bg-red-100 text-red-700 border-red-200" :
+                              getDisplayStatus(order) === 'Delivery in Progress' ? "bg-blue-100 text-blue-700 border-blue-200" :
+                              "bg-amber-100 text-amber-700 border-amber-200"
+                            )}
+                          >
+                            {getDisplayStatus(order)}
+                          </Badge>
+                          {order.deliveredDate && (
+                            <div className="flex items-center gap-1 text-[10px] text-green-600 font-medium mt-1">
+                              <span>Delivered at:</span>
+                              <span className="font-bold">{format(new Date(order.deliveredDate), 'dd MMM yyyy')}</span>
+                              <span className="uppercase">{format(new Date(order.deliveredDate), 'hh:mm a')}</span>
+                            </div>
+                          )}
+                          {order.currentDeliveryBoyName && (
+                            <div className="flex items-center gap-1.5 text-[11px] font-medium mt-1.5 text-gray-700">
+                              <User className="h-3 w-3 text-blue-600" />
+                              {order.currentDeliveryBoyName}
+                            </div>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-center w-[100px] align-middle">
                         <div className="inline-flex items-center justify-center h-8 w-8 rounded-full bg-blue-100 text-blue-700 font-bold text-sm">
                           {order.reassignmentCount}
                         </div>
                       </TableCell>
-                      <TableCell className="text-center">
+                      <TableCell className="text-center w-[100px] align-middle">
                         <span className={cn(
                           "font-bold",
                           order.agingDays > 7 ? "text-red-600" : 
@@ -447,34 +517,38 @@ export default function ReassignedReportsPage() {
           {/* Pagination Controls */}
           {!isLoading && filteredOrders.length > 0 && (
             <div className="flex flex-col sm:flex-row items-center justify-end gap-x-6 gap-y-4 py-4 border-t px-6 bg-gray-50/50">
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-500">Items per page:</span>
-                <Select
-                  value={itemsPerPage.toString()}
-                  onValueChange={(value) => {
-                    setItemsPerPage(parseInt(value));
-                  }}
-                >
-                  <SelectTrigger className="h-8 w-[70px] bg-white">
-                    <SelectValue placeholder={itemsPerPage} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="10">10</SelectItem>
-                    <SelectItem value="25">25</SelectItem>
-                    <SelectItem value="50">50</SelectItem>
-                    <SelectItem value="100">100</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              {hasPermission('view_reassigned_orders_reports_count') && (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-500">Items per page:</span>
+                  <Select
+                    value={itemsPerPage.toString()}
+                    onValueChange={(value) => {
+                      setItemsPerPage(parseInt(value));
+                    }}
+                  >
+                    <SelectTrigger className="h-8 w-[70px] bg-white">
+                      <SelectValue placeholder={itemsPerPage} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="10">10</SelectItem>
+                      <SelectItem value="25">25</SelectItem>
+                      <SelectItem value="50">50</SelectItem>
+                      <SelectItem value="100">100</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
 
-              <div className="text-sm text-gray-500">
-                <span className="font-medium text-gray-900">
-                  {Math.min(filteredOrders.length, (currentPage - 1) * itemsPerPage + 1)}-
-                  {Math.min(filteredOrders.length, currentPage * itemsPerPage)}
-                </span>
-                {" "}of{" "}
-                <span className="font-medium text-gray-900">{filteredOrders.length}</span>
-              </div>
+              {hasPermission('view_reassigned_orders_reports_count') && (
+                <div className="text-sm text-gray-500">
+                  <span className="font-medium text-gray-900">
+                    {Math.min(filteredOrders.length, (currentPage - 1) * itemsPerPage + 1)}-
+                    {Math.min(filteredOrders.length, currentPage * itemsPerPage)}
+                  </span>
+                  {" "}of{" "}
+                  <span className="font-medium text-gray-900">{filteredOrders.length}</span>
+                </div>
+              )}
 
               <div className="flex items-center gap-2">
                 <Button
@@ -486,9 +560,11 @@ export default function ReassignedReportsPage() {
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
-                <div className="text-sm font-medium">
-                  Page {currentPage} of {totalPages || 1}
-                </div>
+                {hasPermission('view_reassigned_orders_reports_count') && (
+                  <div className="text-sm font-medium">
+                    Page {currentPage} of {totalPages || 1}
+                  </div>
+                )}
                 <Button
                   variant="outline"
                   size="icon"

@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "../../../../../lib/db";
-import { verifyAdminAuth, getAdminAuthErrorResponse } from "../../../../../lib/admin-auth";
+import { verifyAdminAuthWithPermission, getAdminPermissionErrorResponse } from "../../../../../lib/admin-auth";
 import { getStartOfDayIST, getEndOfDayIST, getNowIST, getTodayIST } from "../../../../../lib/timezone";
 
 export async function GET(req: NextRequest) {
     try {
-        if (!(await verifyAdminAuth(req))) {
-            return NextResponse.json(getAdminAuthErrorResponse(), { status: 401 });
+        if (!(await verifyAdminAuthWithPermission(req, "view_delivery_exceptions"))) {
+            return NextResponse.json(getAdminPermissionErrorResponse(), { status: 403 });
         }
 
         const { searchParams } = new URL(req.url);
@@ -138,6 +138,9 @@ export async function GET(req: NextRequest) {
             productName: string;
             quantity: number;
             amount: number;
+            paymentMethod: string;
+            paymentStatus: string;
+            paymentInstrument: string | null;
             notDeliveredReason: string;
             deliveryBoyName: string;
             deliveryDate: Date;
@@ -171,6 +174,9 @@ export async function GET(req: NextRequest) {
                 ) as "productName",
                 o."quantity",
                 o."amount",
+                o."paymentMethod",
+                o."paymentStatus",
+                o."paymentInstrument",
                 (
                     SELECT ro_fail."notDeliveredReason"
                     FROM "RouteOrder" ro_fail
@@ -273,6 +279,9 @@ export async function GET(req: NextRequest) {
                     quantity: order.quantity,
                     amount: order.amount ? order.amount / 100 : 0,
                 },
+                paymentMethod: order.paymentMethod,
+                paymentStatus: order.paymentStatus,
+                paymentInstrument: order.paymentInstrument,
                 notDeliveredReason: reason,
                 lastDeliveryBoy: order.deliveryBoyName || 'Unassigned', // Current / Active
                 previousDeliveryBoy: previousDbName, // The one who failed or Unassigned
