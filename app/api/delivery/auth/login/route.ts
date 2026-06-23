@@ -85,7 +85,7 @@ export async function POST(req: Request) {
       {
         adminId: admin.id,
         deliveryBoyId: activeProfile.id,
-        role: admin.role.name,
+        role: admin.roleName,
       },
       JWT_SECRET,
       { expiresIn: "7d" } // Token expires in 7 days
