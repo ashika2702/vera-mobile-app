@@ -30,6 +30,7 @@ export async function GET(req: NextRequest) {
     const { deliveryBoyId } = user;
     const now = new Date();
     const todayIST = getStartOfDayIST(now);
+    const tomorrowIST = new Date(todayIST.getTime() + 24 * 60 * 60 * 1000);
     const dateStr = formatDateToISO(todayIST);
 
     // 1. Find the Route assigned to this delivery boy for today
@@ -57,8 +58,8 @@ export async function GET(req: NextRequest) {
        FROM "Route" r
        INNER JOIN "ServiceRoute" sr ON r."serviceRouteId" = sr."id"
        INNER JOIN "DeliveryBoy" db ON r."deliveryBoyId" = db."id"
-       WHERE r."deliveryBoyId" = $1 AND r."date"::date = $2::date`,
-      [deliveryBoyId, dateStr]
+       WHERE r."deliveryBoyId" = $1 AND r."date" >= $2 AND r."date" < $3`,
+      [deliveryBoyId, todayIST, tomorrowIST]
     );
 
     if (routeInfoRes.rows.length === 0) {
