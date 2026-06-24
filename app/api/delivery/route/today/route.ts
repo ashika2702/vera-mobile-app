@@ -109,8 +109,10 @@ export async function GET(req: NextRequest) {
         ro."codCollected",
         ro."id" as "routeOrderId",
         ro."sequence",
+        ro."updatedAt" as "routeOrderUpdatedAt",
         c."depositWalletBalance",
         o."isQrPayment",
+        o."paymentInstrument",
         (SELECT COUNT(*) FROM "OrderActivityLog" al WHERE al."orderId" = o."id" AND al."action" = 'REASSIGNED') as "reassignedCount",
         (
           EXISTS (SELECT 1 FROM "RouteOrder" ro_check WHERE ro_check."orderId" = o."id" AND ro_check."deliveryStatus" = 'NOT_DELIVERED')
@@ -252,9 +254,11 @@ export async function GET(req: NextRequest) {
           },
           deliveryStatus: row.deliveryStatus,
           notDeliveredReason: row.notDeliveredReason,
+          updatedAt: row.routeOrderUpdatedAt,
           codCollected: row.codCollected,
           expectedCOD: expectedCODForThisOrder / 100,
           isQrPayment: row.isQrPayment || false,
+          paymentInstrument: row.paymentInstrument || 'UPI',
           isReassigned: row.isReassignedHistory && !['NOT_DELIVERED', 'CANCELLED'].includes(row.orderStatus),
           reassignedCount: Number(row.reassignedCount) || 0,
           items: orderItemsMap.get(row.orderId) || [],
