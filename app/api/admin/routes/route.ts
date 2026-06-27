@@ -119,10 +119,17 @@ export async function GET(req: NextRequest) {
         [r.id]
       );
 
+      // Fetch shift logs for this route
+      const shiftLogsRes = await query<{ action: string, generatedAt: Date }>(
+        `SELECT "action", "timestamp" AT TIME ZONE 'Asia/Kolkata' as "generatedAt" FROM "RouteShiftLog" WHERE "routeId" = $1 ORDER BY "timestamp" DESC`,
+        [r.id]
+      );
+
       return {
         ...r,
         area: r.serviceRouteName, // Mapping service route name to 'area' for frontend compatibility
-        tokenLogs: logsRes.rows
+        tokenLogs: logsRes.rows,
+        shiftLogs: shiftLogsRes.rows
       };
     }));
 

@@ -110,6 +110,12 @@ export async function POST(
 
         console.log(`[OptimizeAPI] Optimization complete. Saving ${optimizedStops.length} stops to DB.`);
 
+        const oldSequenceArray = pendingOrders
+            .sort((a, b) => a.sequence - b.sequence)
+            .map(o => `${o.sequence}. #${o.orderNumber}`);
+            
+        const newSequenceArray = optimizedStops.map((stop, index) => `${index + 1}. #${stop.orderNumber}`);
+
         // 5. Update sequences in DB
         await withTransaction(async (client) => {
             for (let i = 0; i < optimizedStops.length; i++) {
@@ -127,18 +133,13 @@ export async function POST(
 
             // Log route optimization history for the staff to see
             await client.query(
-                `INSERT INTO "RouteShiftLog" ("routeId", "action", "actorId", "actorType")
-                 VALUES ($1, 'OPTIMIZED', $2, 'ADMIN')`,
-                [routeId, adminId]
+                `INSERT INTO "RouteShiftLog" ("id", "routeId", "action", "triggeredBy", "timestamp", "previousSequence", "newSequence")
+                 VALUES (gen_random_uuid(), $1, 'OPTIMIZE'::"ShiftActionType", $2, NOW(), $3, $4)`,
+                [routeId, `admin_${adminId}`, JSON.stringify(oldSequenceArray), JSON.stringify(newSequenceArray)]
             );
         });
 
         // 6. Log the optimization action
-        const oldSequenceArray = pendingOrders
-            .sort((a, b) => a.sequence - b.sequence)
-            .map(o => `${o.sequence}. #${o.orderNumber}`);
-            
-        const newSequenceArray = optimizedStops.map((stop, index) => `${index + 1}. #${stop.orderNumber}`);
 
         logAction({
             actorId: adminId,

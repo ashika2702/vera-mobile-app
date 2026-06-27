@@ -9,23 +9,23 @@ datasource db {
 model Customer {
   id                          String                       @id @default(cuid())
   phone                       String                       @unique
-  active                      Boolean                      @default(true)
   name                        String?
   razorpayCustomerId          String?
-  depositWalletBalance        Float                        @default(0)
-  cansInHand                  Int                          @default(0)
   createdAt                   DateTime                     @default(now())
   updatedAt                   DateTime                     @updatedAt
+  cansInHand                  Int                          @default(0)
+  depositWalletBalance        Float                        @default(0)
+  active                      Boolean                      @default(true)
   addresses                   Address[]
   cartItems                   CartItem[]
   paymentMethods              CustomerPaymentMethod[]
   productPrices               CustomerProductPrice[]
-  orders                      Order[]
-  walletTransactions          WalletTransaction[]
-  depositVerificationRequests DepositVerificationRequest[]
-  returnCanRequests           ReturnCanRequest[]
   depositRefundRequests       DepositRefundRequest[]
+  depositVerificationRequests DepositVerificationRequest[]
+  orders                      Order[]
+  returnCanRequests           ReturnCanRequest[]
   sessions                    UserSession[]
+  walletTransactions          WalletTransaction[]
 }
 
 model UserSession {
@@ -33,11 +33,10 @@ model UserSession {
   customerId String
   token      String   @unique
   expiresAt  DateTime
-  pushToken  String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
-
-  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  pushToken  String?
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
   @@index([token])
   @@index([customerId])
@@ -46,73 +45,72 @@ model UserSession {
 model WalletTransaction {
   id            String   @id @default(cuid())
   customerId    String
-  amount        Float // Positive for credit, negative for debit
-  type          String // CREDIT, DEBIT
-  referenceType String // ORDER, MANUAL_ADJUSTMENT, REFUND
-  referenceId   String? // ID of the order or other reference
+  amount        Float
+  type          String
+  referenceType String
+  referenceId   String?
   description   String?
   createdAt     DateTime @default(now())
-
-  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  customer      Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
   @@index([customerId])
   @@index([createdAt])
 }
 
 model Address {
-  id           String   @id @default(cuid())
-  customerId   String
-  nickname     String?
-  contactName  String?
-  contactPhone String?
-  line1        String
-  line2        String?
-  area         String
-  city         String
-  pincode      String
-  landmark     String?
-  isDefault    Boolean  @default(false)
-  active       Boolean  @default(true)
-  latitude     Float?
-  longitude    Float?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  customer     Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  orders       Order[]
-  returnRequests ReturnCanRequest[]
+  id                    String                 @id @default(cuid())
+  customerId            String
+  line1                 String
+  line2                 String?
+  area                  String
+  city                  String
+  pincode               String
+  landmark              String?
+  isDefault             Boolean                @default(false)
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  contactName           String?
+  contactPhone          String?
+  nickname              String?
+  active                Boolean                @default(true)
+  latitude              Float?
+  longitude             Float?
+  customer              Customer               @relation(fields: [customerId], references: [id], onDelete: Cascade)
   depositRefundRequests DepositRefundRequest[]
+  orders                Order[]
+  returnRequests        ReturnCanRequest[]
 
   @@index([pincode])
   @@index([area])
 }
 
 model Order {
-  id                 String        @id @default(cuid())
-  orderNumber        String?       @unique
+  id                 String             @id @default(cuid())
   customerId         String
   addressId          String
-  productId          String?
   quantity           Int
   deliveryDate       DateTime
   deliverySlot       String
-  status             OrderStatus   @default(PENDING)
-  paymentStatus      PaymentStatus @default(PENDING)
+  status             OrderStatus        @default(PENDING)
+  paymentStatus      PaymentStatus      @default(PENDING)
   paymentMethod      PaymentMethod
-  createdAt          DateTime      @default(now())
-  updatedAt          DateTime      @updatedAt
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
   amount             Int
-  depositAmount      Int           @default(0)
   additionalQuantity Int?
   originalQuantity   Int?
   paymentInstrument  String?
-  isQrPayment        Boolean       @default(false)
-  address            Address       @relation(fields: [addressId], references: [id])
-  customer           Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  product            Product?      @relation(fields: [productId], references: [id])
+  productId          String?
+  depositAmount      Int                @default(0)
+  orderNumber        String?            @unique
+  isQrPayment        Boolean            @default(false)
+  address            Address            @relation(fields: [addressId], references: [id])
+  customer           Customer           @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  product            Product?           @relation(fields: [productId], references: [id])
+  activityLogs       OrderActivityLog[]
   items              OrderItem[]
   payments           Payment[]
   routeOrders        RouteOrder[]
-  activityLogs       OrderActivityLog[]
 
   @@index([createdAt])
   @@index([deliveryDate])
@@ -157,20 +155,18 @@ model Payment {
 }
 
 model DeliveryBoy {
-  id                 String         @id @default(cuid())
+  id                 String             @id @default(cuid())
   name               String
-  phone              String         @unique
-  active             Boolean        @default(true)
-  createdAt          DateTime       @default(now())
-  updatedAt          DateTime       @updatedAt
-  onLeave            Boolean        @default(false)
+  phone              String             @unique
+  active             Boolean            @default(true)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  onLeave            Boolean            @default(false)
+  adminId            String?
+  admin              Admin?             @relation(fields: [adminId], references: [id])
+  returnRequests     ReturnCanRequest[]
   routes             Route[]
-  currentStaffRoutes ServiceRoute[] @relation("CurrentStaff")
-
-  returnRequests ReturnCanRequest[]
-
-  adminId String?
-  admin   Admin?  @relation(fields: [adminId], references: [id])
+  currentStaffRoutes ServiceRoute[]     @relation("CurrentStaff")
 
   @@index([active, onLeave])
 }
@@ -181,21 +177,21 @@ model ReturnCanRequest {
   quantity          Int
   status            ReturnRequestStatus @default(REQUESTED)
   refundAmount      Float
-  refundMethod      String              @default("ONLINE") // 'ONLINE' (UPI/Bank) or 'COD'
+  refundMethod      String              @default("ONLINE")
   upiId             String?
   accountNumber     String?
   ifscCode          String?
   bankName          String?
   adminId           String?
   deliveryPartnerId String?
-  addressId         String?
   createdAt         DateTime            @default(now())
   updatedAt         DateTime            @updatedAt
   approvedAt        DateTime?
   collectedAt       DateTime?
+  addressId         String?
+  address           Address?            @relation(fields: [addressId], references: [id])
   customer          Customer            @relation(fields: [customerId], references: [id], onDelete: Cascade)
   deliveryPartner   DeliveryBoy?        @relation(fields: [deliveryPartnerId], references: [id])
-  address           Address?            @relation(fields: [addressId], references: [id])
 
   @@index([customerId])
   @@index([status])
@@ -205,7 +201,6 @@ model DepositRefundRequest {
   id            String              @id @default(cuid())
   customerId    String
   amount        Float
-  quantity      Int?
   status        DepositRefundStatus @default(REQUESTED)
   adminNote     String?
   upiId         String?
@@ -213,49 +208,20 @@ model DepositRefundRequest {
   ifscCode      String?
   bankName      String?
   transactionId String?
-  addressId     String?
-  date          DateTime            @default(now())
   createdAt     DateTime            @default(now())
   updatedAt     DateTime            @updatedAt
   approvedAt    DateTime?
   rejectedAt    DateTime?
+  quantity      Int?
+  addressId     String?
+  date          DateTime            @default(now())
   collected     Boolean             @default(false)
   collectedAt   DateTime?
-  customer      Customer            @relation(fields: [customerId], references: [id], onDelete: Cascade)
   address       Address?            @relation(fields: [addressId], references: [id])
+  customer      Customer            @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
   @@index([customerId])
   @@index([status])
-}
-
-enum DepositRefundStatus {
-  REQUESTED
-  PAID
-  REJECTED
-}
-
-enum ReturnRequestStatus {
-  REQUESTED
-  APPROVED
-  ASSIGNED
-  COLLECTED
-  REFUNDED
-  REJECTED
-}
-
-enum ShiftStatus {
-  PENDING
-  IN_PROGRESS
-  PAUSED
-  COMPLETED
-}
-
-enum ShiftActionType {
-  START
-  PAUSE
-  RESUME
-  END
-  OPTIMIZE
 }
 
 model RouteShiftLog {
@@ -288,28 +254,28 @@ model ServiceRoute {
 }
 
 model Route {
-  id             String          @id @default(cuid())
-  date           DateTime
-  token          String?         @unique
-  tokenExpiresAt DateTime?
-  deliveryBoyId  String
-  isSubmitted    Boolean         @default(false)
-  submittedAt    DateTime?
-  isAutoOptimized Boolean        @default(false)
-  shiftStatus    ShiftStatus     @default(PENDING)
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  serviceRouteId String
-  deliveryBoy    DeliveryBoy     @relation(fields: [deliveryBoyId], references: [id])
-  serviceRoute   ServiceRoute    @relation(fields: [serviceRouteId], references: [id])
-  routeOrders    RouteOrder[]
-  tokenLogs      RouteTokenLog[]
-  shiftLogs      RouteShiftLog[]
+  id              String          @id @default(cuid())
+  date            DateTime
+  token           String?         @unique
+  tokenExpiresAt  DateTime?
+  deliveryBoyId   String
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  serviceRouteId  String
+  isSubmitted     Boolean         @default(false)
+  submittedAt     DateTime?
+  isAutoOptimized Boolean         @default(false)
+  shiftStatus     ShiftStatus     @default(PENDING)
+  deliveryBoy     DeliveryBoy     @relation(fields: [deliveryBoyId], references: [id])
+  serviceRoute    ServiceRoute    @relation(fields: [serviceRouteId], references: [id])
+  routeOrders     RouteOrder[]
+  shiftLogs       RouteShiftLog[]
+  tokenLogs       RouteTokenLog[]
 
+  @@unique([serviceRouteId, date], map: "unique_daily_route")
   @@index([date])
   @@index([deliveryBoyId])
   @@index([serviceRouteId])
-  @@unique([serviceRouteId, date], map: "unique_daily_route")
 }
 
 model RouteTokenLog {
@@ -331,9 +297,9 @@ model RouteOrder {
   deliveryStatus     DeliveryStatus @default(PENDING)
   notDeliveredReason String?
   codCollected       Boolean        @default(false)
-  sequence           Int            @default(0)
   createdAt          DateTime       @default(now())
   updatedAt          DateTime       @updatedAt
+  sequence           Int            @default(0)
   payments           Payment[]
   order              Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
   route              Route          @relation(fields: [routeId], references: [id], onDelete: Cascade)
@@ -378,7 +344,6 @@ model Product {
   name                        String
   description                 String?
   price                       Float
-  depositAmount               Float                        @default(0)
   image                       String?
   unit                        String                       @default("")
   inStock                     Boolean                      @default(true)
@@ -386,12 +351,13 @@ model Product {
   createdAt                   DateTime                     @default(now())
   updatedAt                   DateTime                     @updatedAt
   gst                         Float                        @default(5.0)
+  depositAmount               Float                        @default(0)
   isCustomPrice               Boolean                      @default(false)
   cartItems                   CartItem[]
   customerPrices              CustomerProductPrice[]
+  depositVerificationRequests DepositVerificationRequest[]
   orders                      Order[]
   orderItems                  OrderItem[]
-  depositVerificationRequests DepositVerificationRequest[]
 
   @@index([active])
   @@index([active, inStock])
@@ -402,9 +368,9 @@ model CartItem {
   customerId     String
   productId      String
   quantity       Int
-  returnQuantity Int      @default(0)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+  returnQuantity Int      @default(0)
   customer       Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
   product        Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
 
@@ -428,17 +394,16 @@ model CustomerProductPrice {
 }
 
 model Admin {
-  id           String     @id @default(cuid())
-  email        String     @unique
-  username     String     @unique
-  passwordHash String
-  name         String?
-  active       Boolean    @default(true)
-  roles        AdminRole[]
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
-
+  id                  String        @id @default(cuid())
+  email               String        @unique
+  username            String        @unique
+  passwordHash        String
+  name                String?
+  active              Boolean       @default(true)
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
   deliveryBoyProfiles DeliveryBoy[]
+  roles               AdminRole[]   @relation("AdminToAdminRole")
 
   @@index([email])
   @@index([username])
@@ -448,10 +413,10 @@ model AdminRole {
   id          String   @id @default(cuid())
   name        String   @unique
   description String?
-  permissions String[] // Array of permission strings
-  admins      Admin[]
+  permissions String[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  admins      Admin[]  @relation("AdminToAdminRole")
 }
 
 model ServiceArea {
@@ -477,9 +442,9 @@ model SystemConfig {
 
 model SupportContact {
   id        String   @id @default(cuid())
-  type      String   // "EMAIL" or "PHONE"
-  label     String   // e.g. "Support Line 1"
-  value     String   // e.g. "9843820202" or "sabolpurewater@yahoo.com"
+  type      String
+  label     String
+  value     String
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -504,6 +469,89 @@ model DepositVerificationRequest {
   @@index([customerId])
   @@index([productId])
   @@index([status])
+}
+
+model NotDeliveredReason {
+  id                 String   @id @default(cuid())
+  reason             String   @unique
+  isActive           Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  autoReassign       Boolean  @default(false)
+  hideFromExceptions Boolean  @default(false)
+
+  @@index([isActive])
+}
+
+model Holiday {
+  id        String   @id @default(cuid())
+  date      DateTime @unique
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([date])
+}
+
+model OrderActivityLog {
+  id          String   @id @default(cuid())
+  orderId     String
+  action      String
+  description String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([createdAt])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  actorId     String?
+  actorType   String
+  actorName   String?
+  entity      String
+  entityId    String
+  action      String
+  oldData     Json?
+  newData     Json?
+  description String?
+  createdAt   DateTime @default(now())
+
+  @@index([entity, entityId])
+  @@index([actorId])
+  @@index([createdAt])
+}
+
+enum DepositRefundStatus {
+  REQUESTED
+  PAID
+  REJECTED
+}
+
+enum ReturnRequestStatus {
+  REQUESTED
+  APPROVED
+  ASSIGNED
+  COLLECTED
+  REFUNDED
+  REJECTED
+}
+
+enum ShiftStatus {
+  PENDING
+  IN_PROGRESS
+  PAUSED
+  COMPLETED
+}
+
+enum ShiftActionType {
+  START
+  PAUSE
+  RESUME
+  END
+  OPTIMIZE
 }
 
 enum DepositVerificationStatus {
@@ -538,58 +586,3 @@ enum DeliveryStatus {
   DELIVERED
   NOT_DELIVERED
 }
-
-model NotDeliveredReason {
-  id           String   @id @default(cuid())
-  reason       String   @unique
-  isActive           Boolean  @default(true)
-  autoReassign       Boolean  @default(false)
-  hideFromExceptions Boolean  @default(false)
-  createdAt          DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  @@index([isActive])
-}
-
-model Holiday {
-  id        String   @id @default(cuid())
-  date      DateTime @unique // Start of day in IST (stored as UTC), e.g. 2026-04-30T00:00:00+05:30
-  name      String?           // Optional label, e.g. "Diwali", "Republic Day"
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([date])
-}
-
-model OrderActivityLog {
-  id          String   @id @default(cuid())
-  orderId     String
-  action      String   // PLACED, RESCHEDULED, REASSIGNED, STATUS_CHANGE
-  description String?
-  metadata    Json?
-  createdAt   DateTime @default(now())
-
-  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-
-  @@index([orderId])
-  @@index([createdAt])
-}
-
-model AuditLog {
-  id          String   @id @default(cuid())
-  actorId     String?  // The Admin ID, Customer ID, Delivery Boy ID, or null for System
-  actorType   String   // 'ADMIN', 'CUSTOMER', 'SYSTEM', 'DELIVERY_BOY'
-  actorName   String?  // Snapshot of their name at the time
-  entity      String   // e.g., 'ORDER', 'CUSTOMER', 'ADMIN_USER', 'PRODUCT'
-  entityId    String   // ID of the affected record
-  action      String   // e.g., 'CREATE', 'UPDATE', 'DELETE', 'ORDER_PLACED'
-  oldData     Json?    // Snapshot before the change
-  newData     Json?    // Snapshot after the change
-  description String?  // Human readable action text
-  createdAt   DateTime @default(now())
-
-  @@index([entity, entityId])
-  @@index([actorId])
-  @@index([createdAt])
-}
-

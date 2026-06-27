@@ -251,6 +251,8 @@ export default function RoutesPage() {
             token: dailyMatch?.token || null,
             tokenExpiresAt: dailyMatch?.tokenExpiresAt || null,
             tokenLogs: dailyMatch?.tokenLogs || [],
+            shiftStatus: dailyMatch?.shiftStatus || null,
+            shiftLogs: dailyMatch?.shiftLogs || [],
             date: dailyMatch?.date || dateStr,
             isSubmitted: dailyMatch?.isSubmitted || false,
             submittedAt: dailyMatch?.submittedAt || null,
@@ -726,7 +728,7 @@ export default function RoutesPage() {
 
   const getRouteHistoryLogs = (route) => {
     if (!route) return [];
-    const logs = [...(route.tokenLogs || [])];
+    const logs = [...(route.tokenLogs || []), ...(route.shiftLogs || [])];
     if (route.isSubmitted && route.submittedAt) {
       logs.push({
         action: 'SUBMITTED',
@@ -935,11 +937,14 @@ export default function RoutesPage() {
                                       route.shiftStatus === 'PAUSED' && "bg-yellow-50 text-yellow-700 border-yellow-200",
                                       route.shiftStatus === 'COMPLETED' && "bg-green-50 text-green-700 border-green-200"
                                     )}>
-                                      {route.shiftStatus.replace('_', ' ')}
+                                      {route.shiftStatus === 'NOT_STARTED' && 'Not Started'}
+                                      {route.shiftStatus === 'IN_PROGRESS' && 'Started'}
+                                      {route.shiftStatus === 'PAUSED' && 'Paused'}
+                                      {route.shiftStatus === 'COMPLETED' && 'Ended'}
                                     </Badge>
                                   ) : (
                                     <Badge variant="outline" className="bg-gray-50 text-gray-700 border-gray-200 py-1 font-medium whitespace-nowrap">
-                                      NOT STARTED
+                                      Not Started
                                     </Badge>
                                   )}
 
@@ -964,7 +969,7 @@ export default function RoutesPage() {
                                     {route.tokenLogs.slice(0, 3).map((log, idx) => (
                                       <div key={idx} className="text-[10px] text-muted-foreground flex items-center justify-between gap-2 border-l-2 border-primary/20 pl-2">
                                         <span className="font-medium truncate max-w-[80px]">
-                                          {log.action === 'GENERATED' ? 'Generated' : 'Copied'}
+                                          {log.action === 'GENERATED' ? 'Generated' : log.action === 'START' ? 'Started' : log.action === 'PAUSE' ? 'Paused' : log.action === 'RESUME' ? 'Resumed' : log.action === 'END' ? 'Ended' : log.action === 'OPTIMIZE' ? 'Optimized' : 'Copied'}
                                         </span>
                                         <span className="whitespace-nowrap">
                                           {formatInTimeZone(new Date(log.generatedAt), 'Asia/Kolkata', 'hh:mm:ss a')}
@@ -1151,10 +1156,15 @@ export default function RoutesPage() {
                         </TableCell>
                         <TableCell className="text-xs">
                           <Badge 
-                            variant={log.action === 'SUBMITTED' ? 'default' : log.action === 'GENERATED' ? 'secondary' : 'outline'} 
+                            variant={log.action === 'SUBMITTED' ? 'default' : (['START', 'RESUME', 'END', 'OPTIMIZE'].includes(log.action) ? 'secondary' : (log.action === 'PAUSE' ? 'outline' : 'outline'))} 
                             className={cn(
                               "text-[10px]", 
-                              log.action === 'SUBMITTED' && "bg-green-600 hover:bg-green-600 text-white font-bold"
+                              log.action === 'SUBMITTED' && "bg-green-600 hover:bg-green-600 text-white font-bold",
+                              log.action === 'START' && "bg-blue-100 hover:bg-blue-100 text-blue-800",
+                              log.action === 'RESUME' && "bg-blue-100 hover:bg-blue-100 text-blue-800",
+                              log.action === 'END' && "bg-green-100 hover:bg-green-100 text-green-800",
+                              log.action === 'PAUSE' && "bg-yellow-100 hover:bg-yellow-100 text-yellow-800",
+                              log.action === 'OPTIMIZE' && "bg-purple-100 hover:bg-purple-100 text-purple-800"
                             )}
                           >
                             {log.action}

@@ -435,7 +435,7 @@ export async function GET(req: NextRequest) {
         },
         isSubmitted: routeInfo.isSubmitted || false,
         submittedAt: routeInfo.submittedAt,
-        shiftStatus: routeInfo.shiftStatus,
+        shiftStatus: routeInfo.shiftStatus || 'PENDING',
         shiftCutoffTime: shiftCutoffTime,
         notDeliveredReasons: (await query(`SELECT reason FROM "NotDeliveredReason" WHERE "isActive" = true ORDER BY "reason" ASC`)).rows.map(r => r.reason)
       },
