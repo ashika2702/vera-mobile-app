@@ -18,15 +18,23 @@ export async function POST(
 
         const adminId = await getAdminIdFromRequest(req);
 
-        // Fetch the human-readable route name
-        const routeInfoRes = await query<{ routeName: string }>(
-            `SELECT sr."name" as "routeName"
+        // Fetch the human-readable route name and shift status
+        const routeInfoRes = await query<{ routeName: string, shiftStatus: string }>(
+            `SELECT sr."name" as "routeName", r."shiftStatus"
              FROM "Route" r
              JOIN "ServiceRoute" sr ON r."serviceRouteId" = sr."id"
              WHERE r."id" = $1`,
             [routeId]
         );
         const routeName = routeInfoRes.rows.length > 0 ? routeInfoRes.rows[0].routeName : "Unknown Route";
+        const shiftStatus = routeInfoRes.rows.length > 0 ? routeInfoRes.rows[0].shiftStatus : "NOT_STARTED";
+
+        if (shiftStatus === 'IN_PROGRESS' || shiftStatus === 'COMPLETED') {
+            return NextResponse.json({
+                success: false,
+                message: `Cannot optimize route because the shift is ${shiftStatus}. The delivery staff must pause the shift first.`
+            }, { status: 400 });
+        }
 
         // 2. Fetch all orders for this route with their GPS coordinates
         const ordersRes = await query<{
@@ -115,6 +123,13 @@ export async function POST(
             await client.query(
                 `UPDATE "Route" SET "isAutoOptimized" = true, "updatedAt" = NOW() WHERE "id" = $1`,
                 [routeId]
+            );
+
+            // Log route optimization history for the staff to see
+            await client.query(
+                `INSERT INTO "RouteShiftLog" ("routeId", "action", "actorId", "actorType")
+                 VALUES ($1, 'OPTIMIZED', $2, 'ADMIN')`,
+                [routeId, adminId]
             );
         });
 

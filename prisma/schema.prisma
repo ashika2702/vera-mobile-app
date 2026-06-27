@@ -33,6 +33,7 @@ model UserSession {
   customerId String
   token      String   @unique
   expiresAt  DateTime
+  pushToken  String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -242,6 +243,36 @@ enum ReturnRequestStatus {
   REJECTED
 }
 
+enum ShiftStatus {
+  PENDING
+  IN_PROGRESS
+  PAUSED
+  COMPLETED
+}
+
+enum ShiftActionType {
+  START
+  PAUSE
+  RESUME
+  END
+  OPTIMIZE
+}
+
+model RouteShiftLog {
+  id               String          @id @default(cuid())
+  routeId          String
+  action           ShiftActionType
+  triggeredBy      String
+  timestamp        DateTime        @default(now())
+  previousSequence Json?
+  newSequence      Json?
+  route            Route           @relation(fields: [routeId], references: [id], onDelete: Cascade)
+
+  @@index([routeId])
+  @@index([action])
+  @@index([timestamp])
+}
+
 model ServiceRoute {
   id                   String        @id @default(cuid())
   name                 String        @unique
@@ -265,6 +296,7 @@ model Route {
   isSubmitted    Boolean         @default(false)
   submittedAt    DateTime?
   isAutoOptimized Boolean        @default(false)
+  shiftStatus    ShiftStatus     @default(PENDING)
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
   serviceRouteId String
@@ -272,6 +304,7 @@ model Route {
   serviceRoute   ServiceRoute    @relation(fields: [serviceRouteId], references: [id])
   routeOrders    RouteOrder[]
   tokenLogs      RouteTokenLog[]
+  shiftLogs      RouteShiftLog[]
 
   @@index([date])
   @@index([deliveryBoyId])
@@ -401,8 +434,7 @@ model Admin {
   passwordHash String
   name         String?
   active       Boolean    @default(true)
-  roleId       String?
-  role         AdminRole? @relation(fields: [roleId], references: [id])
+  roles        AdminRole[]
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 

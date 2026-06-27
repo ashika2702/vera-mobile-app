@@ -100,12 +100,11 @@ export async function POST(req: NextRequest) {
         const orderDateStart = getStartOfDayIST(new Date(order.deliveryDate));
         const orderDateEnd = getEndOfDayIST(new Date(order.deliveryDate));
 
-        const routeTokenRes = await query<{ token: string }>(
-            `SELECT r."token" 
+        const routeTokenRes = await query<{ token: string, shiftStatus: string }>(
+            `SELECT r."token", r."shiftStatus" 
              FROM "Route" r
              JOIN "RouteOrder" ro ON ro."routeId" = r."id"
              WHERE ro."orderId" = $1 
-               AND r."token" IS NOT NULL
                AND r."date" >= $2
                AND r."date" < $3
                AND ro."deliveryStatus" = 'PENDING'
@@ -114,10 +113,18 @@ export async function POST(req: NextRequest) {
         );
 
         if (routeTokenRes.rowCount > 0) {
-            return NextResponse.json(
-                { success: false, message: "Cannot reschedule - route link has already been generated for this order's current delivery date" },
-                { status: 400 }
-            );
+            if (routeTokenRes.rows[0].token) {
+                return NextResponse.json(
+                    { success: false, message: "Cannot reschedule - route link has already been generated for this order's current delivery date" },
+                    { status: 400 }
+                );
+            }
+            if (routeTokenRes.rows[0].shiftStatus === 'IN_PROGRESS' || routeTokenRes.rows[0].shiftStatus === 'COMPLETED') {
+                return NextResponse.json(
+                    { success: false, message: `Cannot reschedule - current delivery shift is ${routeTokenRes.rows[0].shiftStatus}. Staff must pause the shift first.` },
+                    { status: 400 }
+                );
+            }
         }
 
         // 3. New: Check if target route link has been generated
@@ -132,26 +139,36 @@ export async function POST(req: NextRequest) {
 
         const selectedDateEnd = getEndOfDayIST(selectedDateStart);
 
-        const targetRouteTokenRes = await query<{ id: string }>(
-            `SELECT r."id"
+        const targetRouteTokenRes = await query<{ id: string, token: string | null, shiftStatus: string }>(
+            `SELECT r."id", r."token", r."shiftStatus"
              FROM "Route" r
              JOIN "ServiceArea" sa ON sa."serviceRouteId" = r."serviceRouteId"
              WHERE sa."pincode" = $1 
                AND r."date" >= $2
                AND r."date" < $3
-               AND r."token" IS NOT NULL
              LIMIT 1`,
             [order.pincode, selectedDateStart, selectedDateEnd]
         );
 
         if (targetRouteTokenRes.rowCount > 0) {
-            return NextResponse.json(
-                {
-                    success: false,
-                    message: `Cannot reschedule to ${selectedDateStart.toLocaleDateString('en-IN')} - the delivery link for this route is already generated.`
-                },
-                { status: 400 }
-            );
+            if (targetRouteTokenRes.rows[0].token) {
+                return NextResponse.json(
+                    {
+                        success: false,
+                        message: `Cannot reschedule to ${selectedDateStart.toLocaleDateString('en-IN')} - the delivery link for this route is already generated.`
+                    },
+                    { status: 400 }
+                );
+            }
+            if (targetRouteTokenRes.rows[0].shiftStatus === 'IN_PROGRESS' || targetRouteTokenRes.rows[0].shiftStatus === 'COMPLETED') {
+                return NextResponse.json(
+                    {
+                        success: false,
+                        message: `Cannot reschedule to ${selectedDateStart.toLocaleDateString('en-IN')} - the target delivery shift is ${targetRouteTokenRes.rows[0].shiftStatus}. Staff must pause the shift first.`
+                    },
+                    { status: 400 }
+                );
+            }
         }
 
         // 3. Check if order is currently assigned to a route

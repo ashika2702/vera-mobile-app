@@ -44,6 +44,7 @@ export async function GET(req: NextRequest) {
       deliveryBoyPhone: string;
       isSubmitted: boolean;
       submittedAt: Date | null;
+      shiftStatus: string;
     }>(
       `SELECT 
         r."id",
@@ -54,7 +55,8 @@ export async function GET(req: NextRequest) {
         db."name" as "deliveryBoyName",
         db."phone" as "deliveryBoyPhone",
         r."isSubmitted",
-        r."submittedAt"
+        r."submittedAt",
+        r."shiftStatus"
        FROM "Route" r
        INNER JOIN "ServiceRoute" sr ON r."serviceRouteId" = sr."id"
        INNER JOIN "DeliveryBoy" db ON r."deliveryBoyId" = db."id"
@@ -77,6 +79,12 @@ export async function GET(req: NextRequest) {
       `SELECT "depositAmount" FROM "Product" WHERE "active" = true AND "depositAmount" > 0 ORDER BY "createdAt" ASC LIMIT 1`
     );
     const depositRate = productRes.rows[0]?.depositAmount || 0;
+
+    // Fetch Cut-off Time
+    const configRes = await query<{ value: string }>(
+      `SELECT "value" FROM "SystemConfig" WHERE "key" = 'SHIFT_CUTOFF_TIME'`
+    );
+    const shiftCutoffTime = configRes.rows[0]?.value || '08:00';
 
     // 2. Fetch Orders for this route
     const ordersRes = await query<any>(
@@ -427,6 +435,8 @@ export async function GET(req: NextRequest) {
         },
         isSubmitted: routeInfo.isSubmitted || false,
         submittedAt: routeInfo.submittedAt,
+        shiftStatus: routeInfo.shiftStatus,
+        shiftCutoffTime: shiftCutoffTime,
         notDeliveredReasons: (await query(`SELECT reason FROM "NotDeliveredReason" WHERE "isActive" = true ORDER BY "reason" ASC`)).rows.map(r => r.reason)
       },
     });

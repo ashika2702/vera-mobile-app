@@ -927,55 +927,21 @@ export default function RoutesPage() {
                             return (
                               <div className="flex flex-col gap-2 w-full">
                                 <div className="flex items-center gap-2 flex-wrap">
-                                  {isExpired ? (
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-xs text-muted-foreground italic font-medium flex items-center px-2 py-1">
-                                        <AlertCircle className="h-3 w-3 mr-1" />
-                                        Link Expired
-                                      </span>
-                                    </div>
-                                  ) : route.token ? (
-                                    <div className="flex items-center gap-2">
-                                      <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 py-1 font-medium whitespace-nowrap">
-                                        <CheckCircle2 className="h-3 w-3 mr-1" />
-                                        Link Generated
-                                      </Badge>
-                                      {hasPermission('copy_route_links') && (
-                                        <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-8 w-8 text-primary hover:bg-primary/10 shrink-0"
-                                        onClick={(e) => { e.stopPropagation(); handleCopyLink(route); }}
-                                        title="Copy Link"
-                                      >
-                                        <Copy className="h-4 w-4" />
-                                        </Button>
-                                      )}
-                                    </div>
-                                  ) : hasPermission('generate_route_links') ? (
-                                    <Button
-                                      variant="default"
-                                      size="sm"
-                                      onClick={(e) => { e.stopPropagation(); generateToken(route); }}
-                                      className={cn(
-                                        "text-xs bg-primary hover:bg-primary/90 whitespace-nowrap",
-                                        isGen && "opacity-70"
-                                      )}
-                                      disabled={isGen}
-                                    >
-                                      {isGen ? (
-                                        <>
-                                          <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                                          Generating...
-                                        </>
-                                      ) : (
-                                        <>
-                                          <Plus className="h-3 w-3 mr-1" />
-                                          Generate Link
-                                        </>
-                                      )}
-                                    </Button>
-                                  ) : null}
+                                  {route.shiftStatus ? (
+                                    <Badge variant="outline" className={cn(
+                                      "py-1 font-medium whitespace-nowrap",
+                                      route.shiftStatus === 'NOT_STARTED' && "bg-gray-50 text-gray-700 border-gray-200",
+                                      route.shiftStatus === 'IN_PROGRESS' && "bg-blue-50 text-blue-700 border-blue-200",
+                                      route.shiftStatus === 'PAUSED' && "bg-yellow-50 text-yellow-700 border-yellow-200",
+                                      route.shiftStatus === 'COMPLETED' && "bg-green-50 text-green-700 border-green-200"
+                                    )}>
+                                      {route.shiftStatus.replace('_', ' ')}
+                                    </Badge>
+                                  ) : (
+                                    <Badge variant="outline" className="bg-gray-50 text-gray-700 border-gray-200 py-1 font-medium whitespace-nowrap">
+                                      NOT STARTED
+                                    </Badge>
+                                  )}
 
                                   <Button
                                     variant="ghost"

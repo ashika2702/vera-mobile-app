@@ -45,6 +45,7 @@ export async function GET(req: NextRequest) {
       serviceRouteName: string;
       token: string;
       tokenExpiresAt: Date;
+      shiftStatus: string;
       deliveryBoyId: string;
       deliveryBoyName: string;
       orderCount: number;
@@ -72,6 +73,7 @@ export async function GET(req: NextRequest) {
             sr."name" as "serviceRouteName",
             r."token",
             r."tokenExpiresAt",
+            r."shiftStatus",
             r."deliveryBoyId",
             db."name" as "deliveryBoyName",
             COUNT(
@@ -103,7 +105,7 @@ export async function GET(req: NextRequest) {
         LEFT JOIN "Order" o ON ro."orderId" = o."id"
         LEFT JOIN RouteRefunds rr ON sr.id = rr."serviceRouteId" 
         ${dateFilter}
-        GROUP BY r."id", r."date", r."serviceRouteId", sr."name", r."token", r."tokenExpiresAt", r."deliveryBoyId", db."name", r."createdAt", rr."refundCount", r."isSubmitted", r."submittedAt", r."isAutoOptimized"
+        GROUP BY r."id", r."date", r."serviceRouteId", sr."name", r."token", r."tokenExpiresAt", r."shiftStatus", r."deliveryBoyId", db."name", r."createdAt", rr."refundCount", r."isSubmitted", r."submittedAt", r."isAutoOptimized"
         HAVING COUNT(CASE WHEN o."id" IS NOT NULL AND NOT (o."paymentMethod" = 'ONLINE' AND o."paymentStatus" = 'PENDING') THEN 1 END) > 0 OR COALESCE(rr."refundCount", 0) > 0 OR r."token" IS NOT NULL
         ORDER BY r."date" DESC, r."createdAt" DESC`,
       queryParams

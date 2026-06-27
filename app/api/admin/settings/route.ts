@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
             }
         }
 
-        if (key === "weekly_off_days") {
+        if (key === "weekly_off_days" || key === "SHIFT_CUTOFF_TIME") {
             if (!(await verifyAdminAuthWithPermission(req, "edit_delivery_settings"))) {
                 return NextResponse.json(getAdminPermissionErrorResponse(), { status: 403 });
             }

@@ -23,8 +23,8 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        const routeInfoRes = await query<{ id: string, routeName: string, deliveryBoyName: string, date: Date, token: string | null }>(
-            `SELECT r."id", sr."name" as "routeName", db."name" as "deliveryBoyName", r."date", r."token"
+        const routeInfoRes = await query<{ id: string, routeName: string, deliveryBoyName: string, date: Date, token: string | null, shiftStatus: string }>(
+            `SELECT r."id", sr."name" as "routeName", db."name" as "deliveryBoyName", r."date", r."token", r."shiftStatus"
              FROM "Route" r
              JOIN "ServiceRoute" sr ON r."serviceRouteId" = sr."id"
              LEFT JOIN "DeliveryBoy" db ON r."deliveryBoyId" = db."id"
@@ -49,6 +49,14 @@ export async function POST(req: NextRequest) {
         }
         if (targetInfo?.token) {
             return NextResponse.json({ success: false, message: "Cannot move orders to a route that already has a generated link." }, { status: 400 });
+        }
+
+        // Shift Check: Block move if shift is IN_PROGRESS or COMPLETED
+        if (sourceInfo?.shiftStatus === 'IN_PROGRESS' || sourceInfo?.shiftStatus === 'COMPLETED') {
+            return NextResponse.json({ success: false, message: `Cannot move orders from ${sourceInfo.routeName} because the delivery shift is ${sourceInfo.shiftStatus}. Staff must pause the shift first.` }, { status: 400 });
+        }
+        if (targetInfo?.shiftStatus === 'IN_PROGRESS' || targetInfo?.shiftStatus === 'COMPLETED') {
+            return NextResponse.json({ success: false, message: `Cannot move orders to ${targetInfo.routeName} because the delivery shift is ${targetInfo.shiftStatus}. Staff must pause the shift first.` }, { status: 400 });
         }
 
         const { routeName: sourceRouteName, deliveryBoyName: sourceStaff } = sourceInfo!;

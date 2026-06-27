@@ -135,8 +135,8 @@ export async function POST(req: NextRequest) {
         const preferredDeliveryBoyId = deliveryBoyId || defaultDeliveryBoyId;
 
         // Pre-fetch current assignment for logging BEFORE we potentially delete/change it
-        const currentAssignmentRes = await query<{ id: string; routeId: string; deliveryBoyName: string; routeDate: Date }>(
-            `SELECT ro."id", ro."routeId", db."name" as "deliveryBoyName", r."date" as "routeDate"
+        const currentAssignmentRes = await query<{ id: string; routeId: string; deliveryBoyName: string; routeDate: Date; shiftStatus: string }>(
+            `SELECT ro."id", ro."routeId", db."name" as "deliveryBoyName", r."date" as "routeDate", r."shiftStatus"
              FROM "RouteOrder" ro
              JOIN "Route" r ON ro."routeId" = r."id"
              JOIN "DeliveryBoy" db ON r."deliveryBoyId" = db."id"
@@ -144,13 +144,23 @@ export async function POST(req: NextRequest) {
             [orderId]
         );
 
+        if (currentAssignmentRes.rowCount > 0) {
+            const shiftStatus = currentAssignmentRes.rows[0].shiftStatus;
+            if (shiftStatus === 'IN_PROGRESS' || shiftStatus === 'COMPLETED') {
+                return NextResponse.json(
+                    { success: false, message: `Cannot reassign because the current delivery shift is ${shiftStatus}. Staff must pause the shift first.` },
+                    { status: 400 }
+                );
+            }
+        }
+
         // 4. Verification Check: Try to find an already assigned daily route
         let finalRouteId = null;
         let isDirectlyLinked = false;
 
         // Try to find if a Route (daily instance) already exists for this ServiceRoute on the target date
-        const existingRouteRes = await query<{ id: string; deliveryBoyId: string; token: string | null }>(
-            `SELECT "id", "deliveryBoyId", "token"
+        const existingRouteRes = await query<{ id: string; deliveryBoyId: string; token: string | null; shiftStatus: string }>(
+            `SELECT "id", "deliveryBoyId", "token", "shiftStatus"
              FROM "Route"
              WHERE "serviceRouteId" = $1
                AND "date" >= $2
@@ -168,6 +178,13 @@ export async function POST(req: NextRequest) {
             const existingRoute = existingRouteRes.rows[0];
             finalRouteId = existingRoute.id;
             isDirectlyLinked = true;
+
+            if (existingRoute.shiftStatus === 'IN_PROGRESS' || existingRoute.shiftStatus === 'COMPLETED') {
+                return NextResponse.json(
+                    { success: false, message: `Cannot reassign to this route because its shift is ${existingRoute.shiftStatus}. Staff must pause the shift first.` },
+                    { status: 400 }
+                );
+            }
 
             // If a manual override deliveryBoyId was provided, update the existing route's staff
             if (deliveryBoyId && existingRoute.deliveryBoyId !== deliveryBoyId) {

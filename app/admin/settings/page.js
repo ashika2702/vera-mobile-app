@@ -36,6 +36,10 @@ export default function SettingsPage() {
     const [adminPermissions, setAdminPermissions] = useState([]);
     const [isPermsLoading, setIsPermsLoading] = useState(true);
 
+    // ── Shift Cut-off Time ──────────────────────────────────────────
+    const [shiftCutoffTime, setShiftCutoffTime] = useState('08:00');
+    const [isSavingCutoff, setIsSavingCutoff] = useState(false);
+
     useEffect(() => {
         const perms = localStorage.getItem('adminPermissions');
         if (perms) {
@@ -77,12 +81,19 @@ export default function SettingsPage() {
         try {
             const res = await adminFetch('/api/admin/settings');
             const data = await res.json();
-            if (data.success && data.configs?.HOLIDAY_WEEKDAYS) {
-                const saved = data.configs.HOLIDAY_WEEKDAYS
-                    .split(',')
-                    .map((n) => parseInt(n.trim(), 10))
-                    .filter((n) => !isNaN(n) && n >= 0 && n <= 6);
-                setOffDays(new Set(saved));
+            if (data.success) {
+                if (data.configs?.HOLIDAY_WEEKDAYS) {
+                    const saved = data.configs.HOLIDAY_WEEKDAYS
+                        .split(',')
+                        .map((n) => parseInt(n.trim(), 10))
+                        .filter((n) => !isNaN(n) && n >= 0 && n <= 6);
+                    setOffDays(new Set(saved));
+                } else {
+                    setOffDays(new Set());
+                }
+                if (data.configs?.SHIFT_CUTOFF_TIME) {
+                    setShiftCutoffTime(data.configs.SHIFT_CUTOFF_TIME);
+                }
             } else {
                 setOffDays(new Set());
             }
@@ -178,6 +189,32 @@ export default function SettingsPage() {
             toast.error('Network error. Please try again.');
         } finally {
             setIsSavingOffDays(false);
+        }
+    };
+
+    const handleSaveCutoffTime = async () => {
+        if (!hasPermission('edit_delivery_settings')) return;
+        if (!shiftCutoffTime) {
+            toast.error('Please enter a valid time');
+            return;
+        }
+        setIsSavingCutoff(true);
+        try {
+            const res = await adminFetch('/api/admin/settings', {
+                method: 'POST',
+                body: JSON.stringify({ key: 'SHIFT_CUTOFF_TIME', value: shiftCutoffTime }),
+            });
+            const data = await res.json();
+            if (data.success) {
+                toast.success('Shift cut-off time saved');
+            } else {
+                toast.error(data.message || 'Failed to save cut-off time');
+            }
+        } catch (err) {
+            console.error('Error saving cut-off time:', err);
+            toast.error('Network error. Please try again.');
+        } finally {
+            setIsSavingCutoff(false);
         }
     };
 
@@ -429,6 +466,58 @@ export default function SettingsPage() {
                                     </div>
                                 )}
                             </div>
+                        </CardContent>
+                    </Card>
+                </div>
+            </div>
+
+            {/* ── Bottom Section: Shift Cut-off Time ─────────────────────────────── */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start mt-8">
+                <div className="lg:col-span-5 space-y-8">
+                    <Card className="border-2 shadow-sm overflow-hidden">
+                        <CardHeader className="bg-muted/30 border-b pb-4">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 bg-primary/10 rounded-lg">
+                                    <AlertCircle className="h-6 w-6 text-primary" />
+                                </div>
+                                <div>
+                                    <CardTitle className="text-xl">Shift Cut-off Time</CardTitle>
+                                    <CardDescription>Lock orders and allow staff to start shift</CardDescription>
+                                </div>
+                            </div>
+                        </CardHeader>
+                        <CardContent className="pt-6 space-y-6">
+                            <div className="space-y-2">
+                                <Label htmlFor="cutoff-time" className="text-xs font-bold text-muted-foreground uppercase">Cut-off Time</Label>
+                                <Input
+                                    id="cutoff-time"
+                                    type="time"
+                                    value={shiftCutoffTime}
+                                    onChange={(e) => setShiftCutoffTime(e.target.value)}
+                                    className="h-11 border-2 focus-visible:ring-primary bg-background"
+                                    disabled={!hasPermission('edit_delivery_settings') || isLoadingOffDays}
+                                />
+                            </div>
+
+                            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex gap-3 text-blue-800">
+                                <Info className="h-5 w-5 shrink-0 mt-0.5" />
+                                <p className="text-xs leading-relaxed font-medium">
+                                    After this time, you cannot move or reassign orders unless the delivery staff pauses their shift. Delivery staff will see the "Start Shift" button after this time.
+                                </p>
+                            </div>
+
+                            {hasPermission('edit_delivery_settings') && (
+                                <Button 
+                                    onClick={handleSaveCutoffTime} 
+                                    disabled={isSavingCutoff || isLoadingOffDays} 
+                                    className="w-full h-12 text-md font-semibold shadow-lg hover:shadow-xl transition-all"
+                                >
+                                    {isSavingCutoff
+                                        ? <Loader2 className="h-5 w-5 animate-spin mr-2" />
+                                        : <Save className="h-5 w-5 mr-2" />}
+                                    Save Cut-off Time
+                                </Button>
+                            )}
                         </CardContent>
                     </Card>
                 </div>
